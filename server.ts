@@ -54,31 +54,29 @@ async function startServer() {
       }
 
       const systemInstruction = `
-        TON IDENTITÉ : Doulia, l'agent conversationnel bilingue de MED SAWA au service de la CUD.
+        TON IDENTITÉ : Doulia, l'agent conversationnel bilingue de MED SAWA au service de la CUD (Communauté Urbaine de Douala).
         MISSION : Aider Monsieur le Maire et ses équipes techniques à analyser le Projet de Partenariat Stratégique.
         
-        LANGUE PAR DÉFAUT : FRANÇAIS.
-        - Si l'usager parle en Français, réponds exclusivement en Français.
-        - If the user speaks in English, respond exclusively in English.
-        - Sinon, utilise le Français par défaut.
-        - Réponds TOUJOURS avec un ton professionnel, expert et bilingue.
+        LANGUE : 
+        - Réponds systématiquement dans la langue utilisée par l'utilisateur (Français ou Anglais).
+        - Ton écriture doit être IRRÉPROCHABLE : utilise une ponctuation naturelle, incluant impérativement les apostrophes ('), les accents et les signes de ponctuation standards.
+        - Ton ton est professionnel, expert, institutionnel mais accessible.
 
         SALUTATIONS : 
-        - Ne salue PAS l'utilisateur à chaque message (évite les "Bonjour", "Hello" systématiques).
-        - Reste focalisé sur le contenu technique et l'aide demandée.
+        - Ne salue PAS l'utilisateur à chaque message. Reste focalisé sur l'expertise technique.
 
-        STRICTES INTERDICTIONS :
-        1. JAMAIS de balises HTML dans tes réponses.
-        2. JAMAIS de caractères '#' ou '*' dans tes paragraphes.
-        3. Pas de syntaxe Markdown pour le formatage.
+        DIRECTIVES DE FORMATAGE :
+        1. JAMAIS de balises HTML.
+        2. JAMAIS de symboles Markdown (pas de #, *, or - pour le gras/titres) dans tes paragraphes de texte brut. 
+        3. Utilise uniquement le format JSON structuré ci-dessous.
 
-        RÉPONSE FORMATÉE EN JSON UNIQUEMENT :
+        RÉPONSE JSON :
         {
-          "titre": "...",
-          "paragraphes": ["...", "..."],
-          "motsCles": ["...", "..."],
-          "etapeSuivante": "...",
-          "suggestions": ["...", "..."]
+          "titre": "Titre synthétique de la réponse",
+          "paragraphes": ["Premier paragraphe complet avec apostrophes et ponctuation.", "Deuxième paragraphe détaillé..."],
+          "motsCles": ["MotClé1", "MotClé2"],
+          "etapeSuivante": "Une phrase d'ouverture ou action concrète pour la suite.",
+          "suggestions": ["Question suggérée 1", "Question suggérée 2"]
         }
       `;
 
@@ -117,19 +115,20 @@ async function startServer() {
     };
   };
 
-  const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || "appcjs9z0HEWg8qyB";
+  const AIRTABLE_BASE_ID = "appcjs9z0HEWg8qyB";
   const AIRTABLE_BASE_URL = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}`;
 
   app.post("/api/airtable/conversation", async (req, res) => {
     try {
       if (!process.env.AIRTABLE_API_KEY) throw new Error("Airtable API Key missing");
       const response = await axios.post(`${AIRTABLE_BASE_URL}/tblC3OC6Bg53E9HLt`, {
-        fields: req.body.fields
+        fields: req.body.fields,
+        typecast: true
       }, { headers: airtableHeader() });
       res.json(response.data);
     } catch (error: any) {
       console.error("Airtable Conversation Error:", error.response?.data || error.message);
-      res.status(500).json({ error: "Failed to persist conversation", details: error.message });
+      res.status(500).json({ error: "Failed to persist conversation", details: error.response?.data || error.message });
     }
   });
 
@@ -137,12 +136,13 @@ async function startServer() {
     try {
       if (!process.env.AIRTABLE_API_KEY) throw new Error("Airtable API Key missing");
       const response = await axios.post(`${AIRTABLE_BASE_URL}/tblsGvUwp2gomlo89`, {
-        fields: req.body.fields
+        fields: req.body.fields,
+        typecast: true
       }, { headers: airtableHeader() });
       res.json(response.data);
     } catch (error: any) {
       console.error("Airtable Message Error:", error.response?.data || error.message);
-      res.status(500).json({ error: "Failed to persist message", details: error.message });
+      res.status(500).json({ error: "Failed to persist message", details: error.response?.data || error.message });
     }
   });
 

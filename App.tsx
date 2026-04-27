@@ -315,7 +315,7 @@ const App: React.FC = () => {
           fields: {
             "fldlajUqqcoCMBE6I": msg.id,
             "fldJIozHwNOP8sPQh": [recordId],
-            "fldDSeY1fWkfCtjEO": msg.sender === 'user' ? "User" : "Doulia",
+            "fldDSeY1fWkfCtjEO": msg.sender === 'user' ? "User" : (msg.sender === 'ai' ? "Doulia" : "Système"),
             "flduQMPHSGJHJO9ym": msg.rawText || "",
             "fldAfgHP5n7PAsIg4": msg.structuredContent ? JSON.stringify(msg.structuredContent) : "",
             "fldzHdgZ7eTKEuBAp": new Date().toISOString()
@@ -611,8 +611,10 @@ const App: React.FC = () => {
             </button>
             <img src="https://douala.cm/assets/images/logo_cud.png" alt="CUD" className="h-10 sm:h-14 w-auto object-contain drop-shadow-sm" />
             <div className="h-8 sm:h-10 w-px bg-slate-200"></div>
-            <div className="flex flex-col">
-              <h1 className="text-[10px] sm:text-[13px] font-black text-blue-900 tracking-tighter uppercase leading-none mb-1">ASSISTANT MED SAWA</h1>
+            <div className="flex flex-col" id="app-header-title">
+              <h1 className="text-[10px] sm:text-[13px] font-black text-blue-900 tracking-tighter uppercase leading-none mb-1">
+                ASSISTANT MED SAWA
+              </h1>
               <span className="text-[8px] sm:text-[10px] font-bold text-orange-500 uppercase tracking-widest leading-none">DOULIA</span>
             </div>
         </div>
