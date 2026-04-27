@@ -1,0 +1,9 @@
+{
+  "name": "DOULIA - MED SAWA x CUD",
+  "description": "DOULIA is MED SAWA's AI-powered local collection hub for CUD, designed for e-governance, fiscal optimization, and urban reactivity.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ],
+  "majorCapabilities": []
+}
