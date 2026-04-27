@@ -296,9 +296,12 @@ const App: React.FC = () => {
         const data = await res.json();
         setSessionRecordId(data.id);
         return data.id;
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error("Airtable sync error:", err.details || err.error || res.statusText);
       }
     } catch (e) {
-      console.error("Airtable Sync Error", e);
+      console.error("Airtable Sync Network Error", e);
     }
     return null;
   };
@@ -448,12 +451,29 @@ const App: React.FC = () => {
       }
 
       // Prepare payload for backend
-      const contents = newMessages
+      const rawContents = newMessages
         .filter(m => m.sender !== 'system')
         .map(m => ({
           role: m.sender === 'user' ? 'user' : 'model',
           parts: [{ text: (m.rawText || (m.structuredContent ? JSON.stringify(m.structuredContent) : '')) + (m.id === userMsg.id ? contextFromWeb : '') }]
         }));
+
+      // Merge consecutive same roles or filter to ensure alternating user/model
+      const contents: any[] = [];
+      rawContents.forEach((msg) => {
+        if (contents.length > 0 && contents[contents.length - 1].role === msg.role) {
+          contents[contents.length - 1].parts[0].text += "\n" + msg.parts[0].text;
+        } else {
+          contents.push(msg);
+        }
+      });
+
+      // Ensure it starts with 'user'
+      if (contents.length > 0 && contents[0].role === 'model') {
+        contents.shift();
+      }
+
+      if (contents.length === 0) return;
 
       if (targetFile) {
         const part = await fileToGenerativePart(targetFile);
@@ -469,7 +489,10 @@ const App: React.FC = () => {
         body: JSON.stringify({ messages: contents }),
       });
 
-      if (!response.ok) throw new Error("Erreur de communication avec Doulia.");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Erreur de communication avec Doulia.");
+      }
 
       const data = await response.json();
       const aiText = data.candidates[0].content.parts[0].text;

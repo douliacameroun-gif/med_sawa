@@ -24,6 +24,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       - Sinon, utilise le Français par défaut.
       - Réponds TOUJOURS avec un ton professionnel, expert et bilingue.
 
+      SALUTATIONS : 
+      - Ne salue PAS l'utilisateur à chaque message (évite les "Bonjour", "Hello" systématiques).
+      - Reste focalisé sur le contenu technique et l'aide demandée.
+
       STRICTES INTERDICTIONS :
       1. JAMAIS de balises HTML dans tes réponses.
       2. JAMAIS de caractères '#' ou '*' dans tes paragraphes.
@@ -40,7 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     `;
 
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
       {
         system_instruction: { parts: [{ text: systemInstruction }] },
         contents: messages,
@@ -53,7 +57,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.status(200).json(response.data);
   } catch (error: any) {
-    console.error("Gemini error:", error.response?.data || error.message);
-    res.status(500).json({ error: "Failed to communicate with Doulia." });
+    const errorData = error.response?.data;
+    console.error("Gemini Vercel Error:", JSON.stringify(errorData || error.message));
+    res.status(500).json({ 
+      error: "Doulia est momentanément indisponible.",
+      details: errorData?.error?.message || error.message
+    });
   }
 }
