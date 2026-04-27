@@ -15,8 +15,7 @@ export default defineConfig(({ mode }) => {
         tailwindcss(),
       ],
       define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        // We now use server-side AI_PRO_KEY via /api/chat proxy
       },
       resolve: {
         alias: {

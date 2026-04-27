@@ -1,6 +1,5 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   MessageSquare, 
@@ -267,15 +266,95 @@ const App: React.FC = () => {
   const [errorNotification, setErrorNotification] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'chat' | 'audit'>('chat'); 
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true); // Sidebar toggle
+  const [sessionRecordId, setSessionRecordId] = useState<string | null>(null);
+  const sessionIdRef = useRef<string>(`SESS_${Date.now()}`);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
-  const aiRef = useRef<GoogleGenAI | null>(null);
-  const chatSessionRef = useRef<any>(null); 
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef(0);
   const currentPlayingSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const recognitionRef = useRef<any>(null);
+
+  // Airtable Sync Helpers
+  const syncConversationToAirtable = async (lang: string) => {
+    try {
+      const res = await fetch("/api/airtable/conversation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fields: {
+            "fldsAweUhC6u2y9ny": sessionIdRef.current,
+            "fldfbaSIUb8KUZD9w": "douliacameroun@gmail.com",
+            "fldMLk3YUmBxrlc3M": new Date().toISOString(),
+            "fldRe7vGOJjO964at": lang === "en" ? "Anglais" : "Français",
+            "fld7Rhw5t8ggDZavZ": "Audit Stratégique"
+          }
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSessionRecordId(data.id);
+        return data.id;
+      }
+    } catch (e) {
+      console.error("Airtable Sync Error", e);
+    }
+    return null;
+  };
+
+  const syncMessageToAirtable = async (msg: Message, recordId: string) => {
+    try {
+      await fetch("/api/airtable/message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fields: {
+            "fldlajUqqcoCMBE6I": msg.id,
+            "fldJIozHwNOP8sPQh": [recordId],
+            "fldDSeY1fWkfCtjEO": msg.sender === 'user' ? "User" : "Doulia",
+            "flduQMPHSGJHJO9ym": msg.rawText || "",
+            "fldAfgHP5n7PAsIg4": msg.structuredContent ? JSON.stringify(msg.structuredContent) : "",
+            "fldzHdgZ7eTKEuBAp": new Date().toISOString()
+          }
+        })
+      });
+    } catch (e) { console.error("Msg Sync Error", e); }
+  };
+
+  const syncDocToAirtable = async (file: File, synthesis: string, recordId: string) => {
+    try {
+      await fetch("/api/airtable/document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fields: {
+            "fldpCFo47VhGy4KN6": file.name,
+            "fldR2EbvGKD6NZgcb": file.type,
+            "fldPkduwxOagDnEkx": new Date().toISOString(),
+            "fldIhljvVKo9UQolQ": synthesis,
+            "fldjl2atDgHhZlW7U": [recordId]
+          }
+        })
+      });
+    } catch (e) { console.error("Doc Sync Error", e); }
+  };
+
+  const syncAnalyticToAirtable = async (pillar: string, recordId: string) => {
+    try {
+      await fetch("/api/airtable/analytic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fields: {
+            "fld68GIXtuXeCXtIs": `VIEW_${Date.now()}`,
+            "fld5xJYOPHJRb4ewZ": pillar,
+            "fld305QI1AlKNsOn3": [recordId]
+          }
+        })
+      });
+    } catch (e) { console.error("Analytic Sync Error", e); }
+  };
 
   const pillars: PillarData[] = [
     { 
@@ -311,51 +390,9 @@ const App: React.FC = () => {
   }, []);
 
   const playAudioResponse = useCallback(async (text: string) => {
-    const ai = aiRef.current;
-    if (!ai) return;
-    
-    stopAllAudio();
-
-    if (!outputAudioContextRef.current) {
-        outputAudioContextRef.current = new window.AudioContext({ sampleRate: 24000 });
-    }
-    const outputAudioContext = outputAudioContextRef.current;
-    if (outputAudioContext.state === 'suspended') await outputAudioContext.resume();
-
-    try {
-      setIsSpeaking(true);
-      // On divise le texte en morceaux si nécessaire, mais gemini-2.5-flash-preview-tts supporte de longs textes.
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
-        },
-      });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outputAudioContext.currentTime);
-        const audioBuffer = await decodeAudioData(decode(base64Audio), outputAudioContext, 24000, 1);
-        const source = outputAudioContext.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(outputAudioContext.destination);
-        source.addEventListener('ended', () => {
-          currentPlayingSourcesRef.current.delete(source);
-          if (currentPlayingSourcesRef.current.size === 0) setIsSpeaking(false);
-        });
-        source.start(nextStartTimeRef.current);
-        nextStartTimeRef.current += audioBuffer.duration;
-        currentPlayingSourcesRef.current.add(source);
-      } else {
-        setIsSpeaking(false);
-      }
-    } catch (error) { 
-      console.warn('TTS error:', error); 
-      setIsSpeaking(false);
-    }
-  }, [stopAllAudio]);
+    // TTS disabled as we moved to proxy server for Gemini
+    // To restore, implement a TTS proxy or initialize GoogleGenAI securely
+  }, []);
 
   const handleSendMessage = useCallback(async (text: string, file?: File | null) => {
     const targetFile = file || selectedFile;
@@ -369,13 +406,26 @@ const App: React.FC = () => {
       sender: 'user', 
       timestamp: new Date().toLocaleTimeString() 
     };
-    setMessages(prev => [...prev, userMsg]);
+    
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
     setInputMessage('');
     setSelectedFile(null);
 
-    try {
-      if (!chatSessionRef.current) throw new Error("Session non initialisée.");
+    // Initial Airtable Sync if first message
+    let currentRecordId = sessionRecordId;
+    if (!currentRecordId) {
+      currentRecordId = await syncConversationToAirtable("fr");
+    }
+    if (currentRecordId) {
+      syncMessageToAirtable(userMsg, currentRecordId);
+      // Track pillar if query is specific
+      if (text.toLowerCase().includes("fiscalité")) syncAnalyticToAirtable("Fiscalité", currentRecordId);
+      if (text.toLowerCase().includes("urbanisme")) syncAnalyticToAirtable("Urbanisme", currentRecordId);
+      if (text.toLowerCase().includes("bureautique")) syncAnalyticToAirtable("Bureautique", currentRecordId);
+    }
 
+    try {
       // Check if web search is needed
       let contextFromWeb = "";
       const searchKeywords = ["quelles sont", "qui est", "actualité", "météo", "prix", "recherche", "web", "internet"];
@@ -397,17 +447,34 @@ const App: React.FC = () => {
         }
       }
 
-      let result;
+      // Prepare payload for backend
+      const contents = newMessages
+        .filter(m => m.sender !== 'system')
+        .map(m => ({
+          role: m.sender === 'user' ? 'user' : 'model',
+          parts: [{ text: (m.rawText || (m.structuredContent ? JSON.stringify(m.structuredContent) : '')) + (m.id === userMsg.id ? contextFromWeb : '') }]
+        }));
+
       if (targetFile) {
         const part = await fileToGenerativePart(targetFile);
-        result = await chatSessionRef.current.sendMessage({ 
-          message: { parts: [{ text: (text || "Analyse documentaire") + contextFromWeb }, part] } 
-        });
-      } else {
-        result = await chatSessionRef.current.sendMessage({ message: text + contextFromWeb });
+        // Add file part to the last message parts list
+        contents[contents.length - 1].parts.push({
+          inline_data: part.inlineData
+        } as any);
       }
 
-      const parsed = JSON.parse(cleanJson(result.text));
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: contents }),
+      });
+
+      if (!response.ok) throw new Error("Erreur de communication avec Doulia.");
+
+      const data = await response.json();
+      const aiText = data.candidates[0].content.parts[0].text;
+      const parsed = JSON.parse(cleanJson(aiText));
+      
       const aiMsg: Message = { 
         id: `ai-${Date.now()}`, 
         structuredContent: parsed, 
@@ -416,17 +483,21 @@ const App: React.FC = () => {
         suggestions: parsed.suggestions 
       };
       setMessages(prev => [...prev, aiMsg]);
+
+      // Final persistence
+      if (currentRecordId) {
+        syncMessageToAirtable(aiMsg, currentRecordId);
+        if (targetFile) {
+          syncDocToAirtable(targetFile, JSON.stringify(parsed), currentRecordId);
+        }
+      }
       
-      // FORCE LECTURE INTÉGRALE : Titre + Tous les paragraphes + Étape suivante
       const ttsText = `${parsed.titre}. ${parsed.paragraphes.join('. ')}. ${parsed.etapeSuivante}`;
       playAudioResponse(ttsText);
 
     } catch (e: any) {
       console.error(e);
-      const errorText = e.message?.includes('429') 
-        ? "Quota dépassé / Quota exceeded : please wait a moment." 
-        : "Erreur technique / Technical error. maintenance in progress.";
-      
+      const errorText = "Doulia est momentanément hors ligne. Vérifiez votre configuration AI_PRO_KEY.";
       setErrorNotification(errorText);
       setMessages(prev => [...prev, { 
         id: `err-${Date.now()}`, 
@@ -436,7 +507,7 @@ const App: React.FC = () => {
         isError: true 
       }]);
     } finally { setIsAnalyzing(false); }
-  }, [playAudioResponse, selectedFile]);
+  }, [playAudioResponse, selectedFile, messages, sessionRecordId]);
 
   // Speech Recognition Setup
   useEffect(() => {
@@ -478,85 +549,42 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    aiRef.current = ai;
     outputAudioContextRef.current = new window.AudioContext({ sampleRate: 24000 });
     
-    chatSessionRef.current = ai.chats.create({
-      model: 'gemini-3-pro-preview',
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            titre: { type: Type.STRING },
-            paragraphes: { type: Type.ARRAY, items: { type: Type.STRING } },
-            motsCles: { type: Type.ARRAY, items: { type: Type.STRING } },
-            etapeSuivante: { type: Type.STRING },
-            suggestions: { type: Type.ARRAY, items: { type: Type.STRING } }
-          },
-          required: ["titre", "paragraphes", "motsCles", "etapeSuivante", "suggestions"]
-        },
-        systemInstruction: `
-          TON IDENTITÉ : Doulia, l'agent conversationnel bilingue de MED SAWA au service de la CUD.
-          MISSION : Aider Monsieur le Maire et ses équipes techniques à analyser le Projet de Partenariat Stratégique.
-          
-          LANGUE PAR DÉFAUT : FRANÇAIS.
-          - Si l'usager parle en Français, réponds exclusivement en Français.
-          - If the user speaks in English, respond exclusively in English.
-          - Sinon, utilise le Français par défaut.
-          - Réponds TOUJOURS avec un ton professionnel, expert et bilingue.
-
-          RECHERCHE WEB : Tu recevras parfois un "CONTEXTE WEB" issu de Tavily. Utilise-le pour faire une synthèse précise et à jour.
-          
-          STRICTES INTERDICTIONS :
-          1. JAMAIS de balises HTML dans tes réponses (pas de <b>, <i>, <br>, etc.).
-          2. JAMAIS de caractères '#' (dièses) ou '*' (astérisques) dans tes paragraphes.
-          3. N'utilise pas de syntaxe Markdown pour le formatage (gras, italique). Utilise du texte brut fluide.
-          
-          STYLE DE RÉPONSE :
-          - Utilise des tirets simples (-) au lieu de puces Markdown complexes if needed, mais privilégie des phrases fluides.
-          - Chaque réponse doit être complète et prête à être lue à haute voix.
-          
-          RÈGLES DE RENDU JSON :
-          - Champ "titre" : Texte brut uniquement.
-          - Champ "paragraphes" : Liste de chaînes de caractères (phrases).
-          - Champ "motsCles" : Mots importants pour la mise en évidence.
-          - SOUVERAINETÉ : Mentionne que les données restent à Douala via MED SAWA.
-        `,
-      },
-    });
-
     const initChat = async () => {
       try {
-        const welcomeMessage = `Bonjour ! Je suis Doulia, l'agent bilingue de MED SAWA au service de la Communauté Urbaine de Douala.
-        Hello! I am Doulia, your bilingual agent from MED SAWA serving the Douala City Council.
+        const welcomeTitle = "Note de Cadrage : Partenariat Stratégique MED SAWA - CUD";
+        const welcomeParas = [
+          "Bonjour ! Je suis Doulia, l'agent bilingue de MED SAWA au service de la Communauté Urbaine de Douala.",
+          "Hello! I am Doulia, your bilingual agent from MED SAWA serving the Douala City Council.",
+          "Mon rôle est de vous accompagner dans l'audit de notre partenariat stratégique. Voici nos priorités :",
+          "- Optimisation bureautique par l'IA / AI Office Optimization.",
+          "- Fiscalité locale et recouvrement / Local taxation and collection.",
+          "- Pilotage urbain et salubrité / Urban steering and sanitation."
+        ];
+        const nextStep = "Je lirai toujours l'intégralité de mes réponses pour votre confort. Comment puis-je vous aider ?";
         
-        Mon rôle est de vous accompagner dans l'audit de notre partenariat stratégique. Voici nos priorités :
-        1. Optimisation bureautique par l'IA / AI Office Optimization.
-        2. Fiscalité locale et recouvrement / Local taxation and collection.
-        3. Pilotage urbain et salubrité / Urban steering and sanitation.
-        
-        Je lirai toujours l'intégralité de mes réponses pour votre confort. Comment puis-je vous aider ?
-        I will always read my full responses for your convenience. How can I assist you?`;
+        const welcomeParsed: ResponseContent = {
+          titre: welcomeTitle,
+          paragraphes: welcomeParas,
+          motsCles: ["MED SAWA", "CUD", "Douala", "Audit"],
+          etapeSuivante: nextStep,
+          suggestions: ["Détails fiscalité", "Analyse urbaine", "Optimisation IA"]
+        };
 
-        const result = await chatSessionRef.current.sendMessage({
-          message: `Génère le message d'accueil bilingue JSON et le titre : "Note de Cadrage : Partenariat Stratégique MED SAWA - CUD". AUCUN GRAS SUR LE TITRE. Contenu : ${welcomeMessage}`
-        });
-        const parsed = JSON.parse(cleanJson(result.text));
         setMessages([{ 
           id: 'welcome', 
-          structuredContent: parsed, 
+          structuredContent: welcomeParsed, 
           sender: 'ai', 
           timestamp: new Date().toLocaleTimeString(), 
-          suggestions: parsed.suggestions 
+          suggestions: welcomeParsed.suggestions 
         }]);
         
-        const ttsText = `${parsed.titre}. ${parsed.paragraphes.join('. ')}. ${parsed.etapeSuivante}`;
+        const ttsText = `${welcomeTitle}. ${welcomeParas.join('. ')}. ${nextStep}`;
         playAudioResponse(ttsText);
       } catch (e) { 
         console.error("Init error", e); 
-        setErrorNotification("Doulia offline. Vérifiez votre connexion.");
+        setErrorNotification("Initialisation de l'audio en cours...");
       }
     };
     initChat();
@@ -591,20 +619,20 @@ const App: React.FC = () => {
       </AnimatePresence>
 
       {/* HEADER COMPACT */}
-      <header className="relative z-30 bg-white/90 backdrop-blur-md border-b border-slate-100 px-4 py-2 flex items-center justify-between shadow-sm flex-none">
-        <div className="flex items-center gap-2 sm:gap-3">
+      <header className="relative z-30 bg-white/95 backdrop-blur-md border-b border-slate-100 px-4 sm:px-8 py-3 sm:py-5 flex items-center justify-between shadow-sm flex-none">
+        <div className="flex items-center gap-3 sm:gap-5">
             <button 
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="hidden lg:flex items-center justify-center p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-all active:scale-90"
+              className="hidden lg:flex items-center justify-center p-2.5 rounded-xl hover:bg-slate-100 text-slate-500 transition-all active:scale-90"
               title={isSidebarOpen ? "Fermer le menu" : "Ouvrir le menu"}
             >
-              <LayoutDashboard size={18} className={isSidebarOpen ? "text-orange-500" : ""} />
+              <LayoutDashboard size={22} className={isSidebarOpen ? "text-orange-500" : ""} />
             </button>
-            <img src="https://douala.cm/assets/images/logo_cud.png" alt="CUD" className="h-7 sm:h-9 w-auto" />
-            <div className="h-6 w-px bg-slate-200"></div>
+            <img src="https://douala.cm/assets/images/logo_cud.png" alt="CUD" className="h-10 sm:h-14 w-auto object-contain drop-shadow-sm" />
+            <div className="h-8 sm:h-10 w-px bg-slate-200"></div>
             <div className="flex flex-col">
-              <h1 className="text-[8px] sm:text-[10px] font-black text-blue-900 tracking-tighter uppercase leading-none mb-0.5">ASSISTANT MED SAWA</h1>
-              <span className="text-[7px] sm:text-[8px] font-bold text-orange-500 uppercase tracking-widest leading-none">DOULIA</span>
+              <h1 className="text-[10px] sm:text-[13px] font-black text-blue-900 tracking-tighter uppercase leading-none mb-1">ASSISTANT MED SAWA</h1>
+              <span className="text-[8px] sm:text-[10px] font-bold text-orange-500 uppercase tracking-widest leading-none">DOULIA</span>
             </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
