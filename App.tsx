@@ -324,41 +324,6 @@ const App: React.FC = () => {
       });
     } catch (e) { console.error("Msg Sync Error", e); }
   };
-
-  const syncDocToAirtable = async (file: File, synthesis: string, recordId: string) => {
-    try {
-      await fetch("/api/airtable/document", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fields: {
-            "fldpCFo47VhGy4KN6": file.name,
-            "fldR2EbvGKD6NZgcb": file.type,
-            "fldPkduwxOagDnEkx": new Date().toISOString(),
-            "fldIhljvVKo9UQolQ": synthesis,
-            "fldjl2atDgHhZlW7U": [recordId]
-          }
-        })
-      });
-    } catch (e) { console.error("Doc Sync Error", e); }
-  };
-
-  const syncAnalyticToAirtable = async (pillar: string, recordId: string) => {
-    try {
-      await fetch("/api/airtable/analytic", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fields: {
-            "fld68GIXtuXeCXtIs": `VIEW_${Date.now()}`,
-            "fld5xJYOPHJRb4ewZ": pillar,
-            "fld305QI1AlKNsOn3": [recordId]
-          }
-        })
-      });
-    } catch (e) { console.error("Analytic Sync Error", e); }
-  };
-
   const pillars: PillarData[] = [
     { 
       title: 'Bureautique IA / Office AI', 
@@ -422,10 +387,6 @@ const App: React.FC = () => {
     }
     if (currentRecordId) {
       syncMessageToAirtable(userMsg, currentRecordId);
-      // Track pillar if query is specific
-      if (text.toLowerCase().includes("fiscalité")) syncAnalyticToAirtable("Fiscalité", currentRecordId);
-      if (text.toLowerCase().includes("urbanisme")) syncAnalyticToAirtable("Urbanisme", currentRecordId);
-      if (text.toLowerCase().includes("bureautique")) syncAnalyticToAirtable("Bureautique", currentRecordId);
     }
 
     try {
@@ -510,9 +471,6 @@ const App: React.FC = () => {
       // Final persistence
       if (currentRecordId) {
         syncMessageToAirtable(aiMsg, currentRecordId);
-        if (targetFile) {
-          syncDocToAirtable(targetFile, JSON.stringify(parsed), currentRecordId);
-        }
       }
       
       const ttsText = `${parsed.titre}. ${parsed.paragraphes.join('. ')}. ${parsed.etapeSuivante}`;

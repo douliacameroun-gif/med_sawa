@@ -14,7 +14,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const response = await axios.post(`https://api.airtable.com/v0/${baseId}/tblsGvUwp2gomlo89`, {
+    const response = await axios.post(`https://api.airtable.com/v0/${baseId}/Messages`, {
       fields: req.body.fields
     }, {
       headers: {

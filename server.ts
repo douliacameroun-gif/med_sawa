@@ -146,32 +146,6 @@ async function startServer() {
     }
   });
 
-  app.post("/api/airtable/document", async (req, res) => {
-    try {
-      if (!process.env.AIRTABLE_API_KEY) throw new Error("Airtable API Key missing");
-      const response = await axios.post(`${AIRTABLE_BASE_URL}/tbl1v7N8abfpQWZIK`, {
-        fields: req.body.fields
-      }, { headers: airtableHeader() });
-      res.json(response.data);
-    } catch (error: any) {
-      console.error("Airtable Document Error:", error.response?.data || error.message);
-      res.status(500).json({ error: "Failed to persist document", details: error.message });
-    }
-  });
-
-  app.post("/api/airtable/analytic", async (req, res) => {
-    try {
-      if (!process.env.AIRTABLE_API_KEY) throw new Error("Airtable API Key missing");
-      const response = await axios.post(`${AIRTABLE_BASE_URL}/tbl22bcT4DMqwq1qk`, {
-        fields: req.body.fields
-      }, { headers: airtableHeader() });
-      res.json(response.data);
-    } catch (error: any) {
-      console.error("Airtable Analytic Error:", error.response?.data || error.message);
-      res.status(500).json({ error: "Failed to persist analytic", details: error.message });
-    }
-  });
-
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
